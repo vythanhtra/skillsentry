@@ -1,0 +1,213 @@
+# SkillSentry — Detection Rules
+# Format: id, pattern (regex), severity, category, description, weight, enabled
+# severity: critical | high | medium | low
+# weight: 0-100 (subtracted from score when matched)
+
+rules:
+  # ── Data Exfiltration ───────────────────────────────────────────────
+  - id: env_file_read
+    pattern: '(?i)(open|read|load|cat|type|get)\s+.*\.env\b'
+    severity: critical
+    category: exfiltration
+    description: Direct .env file read — API key theft risk
+    weight: 50
+    enabled: true
+
+  - id: aws_credentials
+    pattern: '(?i)(\.aws[/\\]credentials|AWS_ACCESS_KEY|AWS_SECRET_ACCESS_KEY|boto3\.Session|aws configure)'
+    severity: critical
+    category: exfiltration
+    description: AWS credential access
+    weight: 55
+    enabled: true
+
+  - id: ssh_private_key
+    pattern: '(?i)(\.ssh[/\\]id_rsa|\.ssh[/\\]id_ed25519|\.ssh[/\\]id_ecdsa|ssh-keygen|authorized_keys)'
+    severity: critical
+    category: exfiltration
+    description: SSH private key access
+    weight: 55
+    enabled: true
+
+  - id: gcp_credentials
+    pattern: '(?i)(application_default_credentials|gcloud\s+auth|GOOGLE_APPLICATION_CREDENTIALS|\.config[/\\]gcloud)'
+    severity: critical
+    category: exfiltration
+    description: GCP credentials access
+    weight: 55
+    enabled: true
+
+  # ── Cloud Metadata SSRF ──────────────────────────────────────────────
+  - id: aws_metadata_ssrf
+    pattern: '169\.254\.169\.254'
+    severity: critical
+    category: ssrf
+    description: AWS EC2 metadata endpoint — IAM credential theft via SSRF
+    weight: 80
+    enabled: true
+
+  - id: gcp_metadata_ssrf
+    pattern: 'metadata\.google\.internal'
+    severity: critical
+    category: ssrf
+    description: GCP metadata endpoint — service account token theft
+    weight: 80
+    enabled: true
+
+  - id: azure_metadata_ssrf
+    pattern: '169\.254\.169\.254.*api-version|169\.254\.169\.254.*metadata.*true'
+    severity: critical
+    category: ssrf
+    description: Azure IMDS — managed identity token theft
+    weight: 80
+    enabled: true
+
+  # ── Network Upload ───────────────────────────────────────────────────
+  - id: multipart_upload
+    pattern: '(?i)(multipart|form-data|files\s*=\s*\{|upload.*file|send_file)'
+    severity: high
+    category: network
+    description: File upload via HTTP multipart — possible exfiltration
+    weight: 30
+    enabled: true
+
+  - id: websocket_exfil
+    pattern: '(?i)(websocket|ws://|wss://|socket\.send|socket\.emit\()'
+    severity: medium
+    category: network
+    description: WebSocket — possible realtime exfiltration channel
+    weight: 20
+    enabled: true
+
+  - id: dns_exfil
+    pattern: '(?i)(socket\.gethostbyname|nslookup|dig\s+.*\.\w{2,}|nmap)'
+    severity: medium
+    category: network
+    description: DNS lookup — possible DNS exfiltration channel
+    weight: 15
+    enabled: true
+
+  # ── Obfuscation ──────────────────────────────────────────────────────
+  - id: rot13_obfuscation
+    pattern: '(?i)(codecs\.decode|\.encode\s*\([''"]rot|rot-?13)'
+    severity: high
+    category: obfuscation
+    description: ROT13 encoding — hiding instructions from text scanners
+    weight: 35
+    enabled: true
+
+  - id: hex_string_decode
+    pattern: '(?i)(bytes\.fromhex\(|binascii\.unhexlify\(|int\(.*,\s*16\)|\\\\x[0-9a-f]{2}){3,}'
+    severity: medium
+    category: obfuscation
+    description: Hex-encoded strings — obfuscated commands
+    weight: 25
+    enabled: true
+
+  - id: chr_concat_bypass
+    pattern: '(?i)(chr\s*\(\d+\)\s*[+]?\s*){4,}'
+    severity: high
+    category: obfuscation
+    description: chr() concatenation — character-by-character string bypass
+    weight: 40
+    enabled: true
+
+  - id: xor_obfuscation
+    pattern: '(?i)chr\s*\(\s*ord\s*\(.*\)\s*\^\s*\d+|bytes\(\[.*\^\s*\d+.*\]\)'
+    severity: high
+    category: obfuscation
+    description: XOR byte-level obfuscation
+    weight: 40
+    enabled: true
+
+  - id: unicode_rtlo
+    pattern: '\u202E'
+    severity: critical
+    category: evasion
+    description: Right-to-Left Override (U+202E) — text reversal attack
+    weight: 70
+    enabled: true
+
+  # ── Persistence & Backdoor ────────────────────────────────────────────
+  - id: cron_write
+    pattern: '(?i)(crontab\s+-[el]|/etc/cron\.|/etc/crontab|at\s+\d{2}:\d{2}|schtasks\s+/create)'
+    severity: critical
+    category: persistence
+    description: Cron/scheduled task installation — persistence backdoor
+    weight: 60
+    enabled: true
+
+  - id: startup_write
+    pattern: '(?i)(~[/\\]\.bashrc|~[/\\]\.zshrc|~[/\\]\.profile|\.bash_profile|autostart|HKCU[/\\].*[/\\]Run\b|HKLM[/\\].*[/\\]Run\b)'
+    severity: critical
+    category: persistence
+    description: Startup script modification — boots with system
+    weight: 60
+    enabled: true
+
+  - id: git_hook_inject
+    pattern: '(?i)(\.git[/\\]hooks[/\\]|git config.*hook|husky.*install|pre-commit.*install)'
+    severity: critical
+    category: persistence
+    description: Git hook installation — runs on every commit/push
+    weight: 65
+    enabled: true
+
+  # ── Self-Destruct ──────────────────────────────────────────────────────
+  - id: self_delete
+    pattern: '(?i)(rm\s+.*\$0|del\s+.*%~f0|os\.remove\s*\(\s*__file__|remove.*self|unlink.*__file__)'
+    severity: critical
+    category: self_destruct
+    description: Self-deletion — destroys evidence after execution
+    weight: 80
+    enabled: true
+
+  # ── Time-Bomb ────────────────────────────────────────────────────────
+  - id: time_conditional_exec
+    pattern: '(?i)(datetime\.now\(\)|time\.time\(\)|datetime\.today\(\))\s*[><=!]{1,2}|\.hour\s*==\s*\d|\.month\s*==\s*\d'
+    severity: medium
+    category: time_bomb
+    description: Time-conditional execution — possible delayed activation
+    weight: 25
+    enabled: true
+
+  # ── Package Poisoning ──────────────────────────────────────────────────
+  - id: custom_package_index
+    pattern: '(?i)(pip install|pip3 install).*(?:--index-url|-i)\s+https?://(?!pypi\.org)'
+    severity: critical
+    category: supply_chain
+    description: Custom pip index — dependency confusion / supply chain attack
+    weight: 70
+    enabled: true
+
+  - id: npm_custom_registry
+    pattern: '(?i)npm\s+(install|i)\s+.*--registry\s+https?://(?!registry\.npmjs\.org)'
+    severity: critical
+    category: supply_chain
+    description: Custom npm registry — supply chain attack vector
+    weight: 70
+    enabled: true
+
+  # ── Clipboard Harvest ──────────────────────────────────────────────────
+  - id: clipboard_read
+    pattern: '(?i)(pbpaste|Get-Clipboard|xclip\s+-o|xdotool\s+getclipboard|pyperclip\.paste\(\)|clipboard\.get\(\))'
+    severity: high
+    category: privacy
+    description: Clipboard read — captures passwords/tokens copied by user
+    weight: 45
+    enabled: true
+
+  # ── Prompt Injection (SKILL.md specific) ─────────────────────────────
+  - id: hidden_html_instruction
+    pattern: '<!--\s*(ignore|override|system|hidden|secret|bypass|disregard)'
+    severity: critical
+    category: injection
+    description: Hidden instruction in HTML comment
+    weight: 50
+    enabled: true
+
+severity_overrides:
+  # Uncomment to tune severity if legitimate use is confirmed:
+  # websocket_exfil: low
+  # dns_exfil: low
+  # time_conditional_exec: low

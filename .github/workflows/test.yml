@@ -1,0 +1,42 @@
+name: Skill Auditor CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Run Skill Auditor Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Test safe skill (expect score >= 60)
+        run: |
+          python scripts/audit_skill.py examples/safe_skill.md --json > /tmp/safe_report.json
+          SCORE=$(python -c "import json; d=json.load(open('/tmp/safe_report.json')); print(d['score'])")
+          echo "Safe skill score: $SCORE"
+          [ "$SCORE" -ge 60 ] && echo "✅ PASS" || (echo "❌ FAIL: safe skill should score >= 60" && exit 1)
+
+      - name: Test malicious skill (expect score < 40)
+        run: |
+          python scripts/audit_skill.py examples/malicious_skill.md --json > /tmp/malicious_report.json
+          SCORE=$(python -c "import json; d=json.load(open('/tmp/malicious_report.json')); print(d['score'])")
+          echo "Malicious skill score: $SCORE"
+          [ "$SCORE" -lt 40 ] && echo "✅ PASS" || (echo "❌ FAIL: malicious skill should score < 40" && exit 1)
+
+      - name: Test audit_skill.py imports clean (no external deps)
+        run: python -c "import ast, sys; ast.parse(open('scripts/audit_skill.py').read()); print('✅ Syntax OK')"
+
+      - name: Audit the auditor itself (dogfooding)
+        run: |
+          python scripts/audit_skill.py SKILL.md --json
+          echo "✅ Dogfood audit complete"
